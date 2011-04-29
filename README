@@ -1,0 +1,23 @@
+BUILDING:
+
+You have to have the Apache development environment on your system. This uses the "apxs" script, which should be built and installed as a part of the Apache development environment.
+
+LIMITATIONS:
+
+Does not use scratch codes
+
+Does not invalidate codes after use. 
+
+
+DISCUSSION:
+
+Code reuse is tricky. Because HTTP requests, unlike interactive SSH sessions, are very short lived. It is therefore very likely that a code would need to be re-used immediatley to request another page.
+
+Also, the way HTTP works, is that once validated, the browser keeps sending the same credentials over and over. As our codes expire outside of a 60 second window - that means after 60 seconds of interacting with a web server, you will be asked to supply a new key. There are two possible fixes for this: 1. Make the keys valid for much longer periods of time 2. Write an authetication cookie to the users's browser, and work with that after the first request. 
+
+Due to the way Apache handles Digest authentication, there is no leeway in time allowed. With Basic authentication, the module can try times around the current time for a valid key, but only one attempt is made in Digest mode. Thus, this requires a high level of clock synchronization between clients and servers.
+
+
+RECOMENDATION:
+
+Someone can always sniff the wire and steal your cookies to hijack your session. This cannot be done if you are using SSL, which is highly recomended - and imperitive for any "real" security.
