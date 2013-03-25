@@ -19,6 +19,8 @@
  * Portions Copyright 2010 Google Inc.
  * By Markus Gutschke
  *
+ * This source code has been fixed for compiling error and other bugs by
+ * Nicola Asuni - Fubra.com - 2011-12-07
  */
 
 #include "apr_strings.h"
@@ -38,6 +40,10 @@
 #include "base32.h"
 #include "hmac.h"
 #include "sha1.h"
+
+#include "apu.h"
+#include "apr_general.h"
+#include "apr_base64.h"
 
 #define DEBUG
 
@@ -164,7 +170,7 @@ static char *getSharedKey(request_rec *r,char *filename) {
   * \param secret Secret key returned here. Must be allocated by caller
   * \return Pointer to secret key data on success, NULL on error
  **/
-static uint8_t *getUserSecret(request_rec *r, char *username, int *secretLen) {
+static uint8_t *getUserSecret(request_rec *r, const char *username, int *secretLen) {
     authn_google_config_rec *conf = ap_get_module_config(r->per_dir_config,
                                                        &authn_google_module);
 		char *ga_filename = apr_psprintf(r->pool,"%s/%s",conf->pwfile,username);
@@ -200,28 +206,21 @@ static int find_cookie(request_rec *r,char **user,uint8_t *secret,int secretLen)
 	char *cookie_expire=0L;
 	char *cookie_valid=0L;
 	ap_regmatch_t regmatch[AP_MAX_REG_MATCH];
-	authn_google_config_rec *conf = ap_get_module_config(r->per_dir_config,
-																										 &authn_google_module);
-	if (cookie = (char *) apr_table_get(r->headers_in, "Cookie")) {
-
+	//authn_google_config_rec *conf = ap_get_module_config(r->per_dir_config, &authn_google_module);
+	cookie = (char *) apr_table_get(r->headers_in, "Cookie");
+	if (cookie) {
 		if (!ap_regexec(cookie_regexp, cookie, AP_MAX_REG_MATCH, regmatch, 0)) {
-			if (user) *user  = ap_pregsub(r->pool, "$1", cookie,AP_MAX_REG_MATCH,regmatch);
-			cookie_expire = ap_pregsub(r->pool, "$2", cookie,AP_MAX_REG_MATCH,regmatch);
-			cookie_valid = ap_pregsub(r->pool, "$3", cookie,AP_MAX_REG_MATCH,regmatch);
-
-			if ((!cookie_valid) || (!cookie_expire)) {
-				if (user) *user  = ap_pregsub(r->pool, "$4", cookie,AP_MAX_REG_MATCH,regmatch);
-				cookie_expire = ap_pregsub(r->pool, "$5", cookie,AP_MAX_REG_MATCH,regmatch);
-				cookie_valid = ap_pregsub(r->pool, "$6", cookie,AP_MAX_REG_MATCH,regmatch);
-			}
+			if (user) *user  = ap_pregsub(r->pool, "$2", cookie,AP_MAX_REG_MATCH,regmatch);
+			cookie_expire = ap_pregsub(r->pool, "$3", cookie,AP_MAX_REG_MATCH,regmatch);
+			cookie_valid = ap_pregsub(r->pool, "$4", cookie,AP_MAX_REG_MATCH,regmatch);
 				
 #ifdef DEBUG
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       "Found cookie Expires \"%s\" Valid \"%s\"",cookie_expire,cookie_valid);
 #endif
 				if (cookie_expire && cookie_valid && *user) {
-					unsigned int exp = apr_atoi64(cookie_expire);
-					unsigned int now = apr_time_now()/1000000;
+					long unsigned int exp = apr_atoi64(cookie_expire);
+					long unsigned int now = apr_time_now()/1000000;
 					if (exp < now) {
 #ifdef DEBUG
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
@@ -294,22 +293,16 @@ static void addCookie(request_rec *r, uint8_t *secret, int secretLen) {
 	}
 }
 
-/* Mark a file with the last used time  - do disallow reuse */
-static void markLastUsed(request_rec *r,char *user) {
-	
-}
-
 
 static authn_status ga_check_password(request_rec *r, const char *user,
                                    const char *password)
 {
     authn_google_config_rec *conf = ap_get_module_config(r->per_dir_config,
                                                        &authn_google_module);
-    apr_status_t status;
-		char *ga_filename;
+    apr_status_t status=0;
 		char *sharedKey=0L;
 		int tm;
-		int i,j;
+		int i;
 		unsigned int truncatedHash = 0;
 
 #ifdef DEBUG
@@ -319,7 +312,7 @@ static authn_status ga_check_password(request_rec *r, const char *user,
 
 
 		int secretLen;
-		uint8_t *secret = getUserSecret(r,0L,&secretLen);
+		uint8_t *secret = getUserSecret(r,user,&secretLen);
 		if (!secret) 
 			return AUTH_DENIED;
 		
@@ -382,10 +375,6 @@ static authn_status ga_get_realm_hash(request_rec *r, const char *user,
 {
     authn_google_config_rec *conf = ap_get_module_config(r->per_dir_config,
                                                        &authn_google_module);
-    ap_configfile_t *f;
-    char l[MAX_STRING_LEN];
-    apr_status_t status;
-    char *file_hash = NULL;
 		char *sharedKey;
 		char *ga_filename;
 
@@ -432,8 +421,6 @@ static int do_cookie_auth(request_rec *r) {
       "**** COOKIE AUTH at  T=%lu",apr_time_now()/1000000);
 #endif
 
-		unsigned int cookie_expires;
-		char *cookie_valid;
 		char *user;
 
     authn_google_config_rec *conf = ap_get_module_config(r->per_dir_config,
@@ -453,7 +440,15 @@ static int do_cookie_auth(request_rec *r) {
 
 static void ga_child_init (apr_pool_t *p, server_rec *s) {
 
-		cookie_regexp= ap_pregcomp(p, "^google_authn=([^;,]+):([^;,]+):([^;,]+)|[;,][ \t]*google_authn=([^;,]+):([^;,]+):([^;,]+)", AP_REG_EXTENDED);
+		// 	Parse cookie string (See RFC-2109 for format), looking for ours.
+		//
+		// Regexp: 
+		// At the beginning of a line, OR after a cookie delimter (followed by optional whitespace)
+		// Look for a google_authn token, consisting of three colon-separated fields,
+		// Each field containing one or more characters which are not cookie-delimiters (comma or semicolon).
+		
+		cookie_regexp= ap_pregcomp(p, "(^|[;,][ \t]*)google_authn[ \t]*=[ \t]*([^;,]+):([^;,]+):([^;,]+)", AP_REG_EXTENDED);
+
 }
 
 static const authn_provider authn_google_provider =
