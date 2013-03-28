@@ -463,7 +463,7 @@ static void register_hooks(apr_pool_t *p)
     ap_register_provider(p, AUTHN_PROVIDER_GROUP, "google_authenticator", "0",
                          &authn_google_provider);
 		ap_hook_child_init(ga_child_init,0L,0L,APR_HOOK_MIDDLE);
-		ap_hook_check_user_id(do_cookie_auth,0L,parsePre,APR_HOOK_MIDDLE);
+		ap_hook_check_user_id(do_cookie_auth,0L,parsePre,APR_HOOK_FIRST);
 }
 
 module AP_MODULE_DECLARE_DATA authn_google_module =
