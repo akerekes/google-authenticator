@@ -54,6 +54,7 @@ typedef struct {
 		int cookieLife;
 		int entryWindow;
 		int debugLevel;
+    char* domain;
 } authn_google_config_rec;
 
 
@@ -93,6 +94,7 @@ static void *create_authn_google_dir_config(apr_pool_t *p, char *d)
 		conf->cookieLife=0;
 		conf->entryWindow=0;
 		conf->debugLevel=0;
+		conf->domain = NULL;
     return conf;
 }
 
@@ -125,6 +127,9 @@ static const command_rec authn_google_cmds[] =
     AP_INIT_TAKE1("GoogleAuthEntryWindow", set_authn_set_int,
                    (void *)APR_OFFSETOF(authn_google_config_rec, entryWindow),
                    OR_AUTHCFG, "Enable authentication cookies with lifespan given in seconds"),
+    AP_INIT_TAKE1("GoogleAuthDomain", set_authn_google_slot,
+                   (void *)APR_OFFSETOF(authn_google_config_rec, domain),
+                   OR_AUTHCFG, "Custom domain to be set for the authentication cookie"),
     {NULL}
 };
 
@@ -339,9 +344,14 @@ static void addCookie(request_rec *r, uint8_t *secret, int secretLen) {
 
 		unsigned long exp = (apr_time_now() / (1000000) ) + conf->cookieLife;
 		char *h = hash_cookie(r->pool,secret,secretLen,exp);
-		char * cookie = apr_psprintf(r->pool,"google_authn=%s:%lu:%s;domain=sailthru-data.com",r->user,exp,h);
+    char * cookie;
+    if (conf->domain) {
+      cookie = apr_psprintf(r->pool,"google_authn=%s:%lu:%s;domain=%s",r->user,exp,h,conf->domain);
+    } else {
+      cookie = apr_psprintf(r->pool,"google_authn=%s:%lu:%s",r->user,exp,h);
+    }
 
-if (conf->debugLevel)
+  if (conf->debugLevel)
 		ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
 			"Created cookie expires %lu hash is %s Cookie: %s",exp,h,cookie);
 
