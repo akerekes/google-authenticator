@@ -113,6 +113,13 @@ static const char *set_authn_set_int(cmd_parms *cmd, void *offset,
 {
     return ap_set_int_slot(cmd, offset, f);
 }
+
+static const char *set_authn_set_string(cmd_parms *cmd, void *offset,
+                                       const char *f )
+{
+    return ap_set_string_slot(cmd, offset, f);
+}
+
 static const command_rec authn_google_cmds[] =
 {
     AP_INIT_TAKE12("GoogleAuthUserPath", set_authn_google_slot,
@@ -127,7 +134,7 @@ static const command_rec authn_google_cmds[] =
     AP_INIT_TAKE1("GoogleAuthEntryWindow", set_authn_set_int,
                    (void *)APR_OFFSETOF(authn_google_config_rec, entryWindow),
                    OR_AUTHCFG, "Enable authentication cookies with lifespan given in seconds"),
-    AP_INIT_TAKE1("GoogleAuthDomain", set_authn_google_slot,
+    AP_INIT_TAKE1("GoogleAuthDomain", set_authn_set_string,
                    (void *)APR_OFFSETOF(authn_google_config_rec, domain),
                    OR_AUTHCFG, "Custom domain to be set for the authentication cookie"),
     {NULL}
