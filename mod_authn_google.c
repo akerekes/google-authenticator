@@ -339,7 +339,7 @@ static void addCookie(request_rec *r, uint8_t *secret, int secretLen) {
 
 		unsigned long exp = (apr_time_now() / (1000000) ) + conf->cookieLife;
 		char *h = hash_cookie(r->pool,secret,secretLen,exp);
-		char * cookie = apr_psprintf(r->pool,"google_authn=%s:%lu:%s",r->user,exp,h);
+		char * cookie = apr_psprintf(r->pool,"google_authn=%s:%lu:%s;domain=sailthru-data.com",r->user,exp,h);
 
 if (conf->debugLevel)
 		ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
