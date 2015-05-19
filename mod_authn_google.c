@@ -54,7 +54,8 @@ typedef struct {
 		int cookieLife;
 		int entryWindow;
 		int debugLevel;
-    char* domain;
+    char *domain;
+    char *path;
 } authn_google_config_rec;
 
 
@@ -91,10 +92,11 @@ static void *create_authn_google_dir_config(apr_pool_t *p, char *d)
     authn_google_config_rec *conf = apr_palloc(p, sizeof(*conf));
 
     conf->pwfile = NULL;     /* just to illustrate the default really */
-		conf->cookieLife=0;
-		conf->entryWindow=0;
-		conf->debugLevel=0;
+		conf->cookieLife = 0;
+		conf->entryWindow = 0;
+		conf->debugLevel = 0;
 		conf->domain = NULL;
+		conf->path = NULL;
     return conf;
 }
 
@@ -137,6 +139,9 @@ static const command_rec authn_google_cmds[] =
     AP_INIT_TAKE1("GoogleAuthDomain", set_authn_set_string,
                    (void *)APR_OFFSETOF(authn_google_config_rec, domain),
                    OR_AUTHCFG, "Custom domain to be set for the authentication cookie"),
+    AP_INIT_TAKE1("GoogleAuthPath", set_authn_set_string,
+                   (void *)APR_OFFSETOF(authn_google_config_rec, path),
+                   OR_AUTHCFG, "Fixed path to be set for the authentication cookie"),
     {NULL}
 };
 
@@ -351,11 +356,12 @@ static void addCookie(request_rec *r, uint8_t *secret, int secretLen) {
 
 		unsigned long exp = (apr_time_now() / (1000000) ) + conf->cookieLife;
 		char *h = hash_cookie(r->pool,secret,secretLen,exp);
-    char * cookie;
+    char * cookie = apr_psprintf(r->pool,"google_authn=%s:%lu:%s",r->user,exp,h);
     if (conf->domain) {
-      cookie = apr_psprintf(r->pool,"google_authn=%s:%lu:%s;domain=%s",r->user,exp,h,conf->domain);
-    } else {
-      cookie = apr_psprintf(r->pool,"google_authn=%s:%lu:%s",r->user,exp,h);
+      cookie = apr_pstrcat(r->pool,cookie,";domain=",conf->domain, NULL);
+    }
+    if (conf->path) {
+      cookie = apr_pstrcat(r->pool,cookie,";path=",conf->path, NULL);
     }
 
   if (conf->debugLevel)
@@ -406,7 +412,7 @@ if (conf->debugLevel)
 
 		if (static_pw) {
 			correctpw = apr_pstrcat(r->pool,static_pw,
-				apr_psprintf(r->pool,"%6.6d",truncatedHash),0L);
+				apr_psprintf(r->pool,"%6.6d",truncatedHash),NULL);
 		} else {
 			correctpw =  apr_psprintf(r->pool,"%6.6d",truncatedHash);
 		}
